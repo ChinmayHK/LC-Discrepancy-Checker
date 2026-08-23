@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LC Discrepancy Checker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onerror="window.__pdfjsLoadFailed = true;"></script>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --ink: #0B1D26;
+    --ink-soft: #4A5C64;
+    --accent: #146B5C;
+    --accent-soft: #E4EFEC;
+    --paper: #F5F3EE;
+    --white: #FFFFFF;
+    --warn: #B8442F;
+    --warn-soft: #FBEAE6;
+    --rule: #D8D3C7;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: var(--white);
+    color: var(--ink);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+
+  /* ---- Upload zone ---- */
+  .upload-zone {
+    display: block;
+    width: 100%;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    background: var(--paper);
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .upload-zone input { display: none; }
+  .upload-icon {
+    width: 36px; height: 36px;
+    margin: 0 auto 14px;
+    color: var(--accent);
+    display: block;
+  }
+  .upload-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .upload-sub {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+  .accepted-types {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .type-chip {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 4px 10px;
+    border-radius: 20px;
+  }
+  .upload-sample-btn {
+    margin-top: 18px;
+    background: none;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 7px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .upload-sample-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- PDF processing state ---- */
+  .processing-zone {
+    border: 1.5px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent-soft);
+    padding: 32px 20px;
+    text-align: center;
+  }
+  .spinner {
+    width: 26px; height: 26px; margin: 0 auto 12px;
+    border: 3px solid #BFDCD4;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .processing-title { font-size: 14.5px; font-weight: 600; margin: 0; }
+
+  /* ---- Header eyebrow ---- */
+  .eyebrow {
+    font-size: 11.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+  h1.page-title {
+    font-size: 22px;
+    margin: 0 0 28px;
+    font-weight: 700;
+  }
+
+  /* ---- Error / warning banners ---- */
+  .banner {
+    border-radius: 4px;
+    padding: 14px 16px;
+    font-size: 13.5px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .banner.error { background: var(--warn-soft); border: 1px solid #E8C4BB; color: #7A2E1F; }
+  .banner.notice { background: var(--accent-soft); border: 1px solid #BFDCD4; color: #0F4A3F; }
+  .banner strong { display: block; margin-bottom: 2px; }
+  .banner-icon { flex-shrink: 0; margin-top: 1px; }
+
+  /* ---- Hero / document stamp block ---- */
+  .doc-hero {
+    background: var(--ink);
+    color: var(--white);
+    border-radius: 6px;
+    padding: 28px 26px;
+    margin-bottom: 8px;
+  }
+  .doc-hero .lc-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8FB5AC;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+  .doc-hero .lc-number {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 18px;
+    letter-spacing: 0.01em;
+  }
+  .doc-hero .amount-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    padding-top: 16px;
+  }
+  .doc-hero .amount {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 24px;
+    font-weight: 700;
+  }
+  .doc-hero .form-tag {
+    font-size: 12px;
+    background: rgba(255,255,255,0.12);
+    padding: 4px 10px;
+    border-radius: 3px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  /* ---- Stamp-style field grid ---- */
+  .stamp-card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 24px 26px 8px;
+    margin-bottom: 28px;
+  }
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .field-cell {
+    padding: 14px 16px 14px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .field-cell.full { grid-column: 1 / -1; }
+  .field-cell .f-label {
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 700;
+    margin: 0 0 5px;
+  }
+  .field-cell .f-value {
+    font-size: 14.5px;
+    font-weight: 500;
+    white-space: pre-line;
+    margin: 0;
+  }
+  .field-cell .f-value.mono {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 13.5px;
+  }
+  .field-cell .f-value.empty {
+    color: #B4AEA0;
+    font-weight: 400;
+    font-style: italic;
+  }
+  @media (max-width: 560px) {
+    .field-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ---- Route line (port of loading -> discharge) ---- */
+  .route-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+  .route-line .port { flex: 1; }
+  .route-arrow { color: var(--accent); font-size: 16px; }
+
+  /* ---- Detail toggle ---- */
+  .detail-toggle {
+    width: 100%;
+    background: var(--white);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 13px 16px;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0;
+  }
+  .detail-toggle:hover { border-color: var(--accent); }
+  .detail-toggle .chev { transition: transform .15s ease; }
+  .detail-toggle.open .chev { transform: rotate(180deg); }
+
+  .detail-panel {
+    display: none;
+    border: 1px solid var(--rule);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .detail-panel.open { display: block; }
+  .detail-panel h3 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    margin: 20px 0 8px;
+  }
+  .detail-panel h3:first-child { margin-top: 0; }
+  .detail-panel .detail-value {
+    font-size: 13.5px;
+    white-space: pre-line;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    background: var(--paper);
+    padding: 12px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+  }
+
+  /* ---- Raw disclosure section (46A/47A) ---- */
+  .disclosure-card {
+    background: var(--warn-soft);
+    border: 1px solid #E8C4BB;
+    border-radius: 6px;
+    padding: 20px 22px;
+    margin-bottom: 24px;
+  }
+  .disclosure-card .d-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .disclosure-card .d-header svg { color: var(--warn); flex-shrink: 0; }
+  .disclosure-card .d-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #7A2E1F;
+    margin: 0;
+  }
+  .disclosure-card .d-sub {
+    font-size: 12.5px;
+    color: #8A4230;
+    margin: 0 0 16px;
+  }
+  .disclosure-field { margin-bottom: 14px; }
+  .disclosure-field:last-child { margin-bottom: 0; }
+  .disclosure-field .df-label {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #7A2E1F;
+    margin: 0 0 6px;
+  }
+  .disclosure-field .df-value {
+    font-size: 13px;
+    white-space: pre-line;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    background: var(--white);
+    padding: 12px 14px;
+    border-radius: 4px;
+    border: 1px solid #E8C4BB;
+    line-height: 1.6;
+  }
+
+  .reset-link {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    text-decoration: underline;
+    cursor: pointer;
+    background: none; border: none; font-family: inherit; padding: 0;
+  }
+  .reset-link:hover { color: var(--accent); }
+
+  .disclaimer-foot {
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    text-align: center;
+    margin-top: 32px;
+    line-height: 1.6;
+  }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <p class="eyebrow">LC Discrepancy Checker</p>
+  <h1 class="page-title">Upload your Letter of Credit</h1>
+
+  <div id="uploadScreen">
+    <label class="upload-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".txt,.mt700,.pdf,application/pdf,text/plain" />
+      <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 3v13m0-13l-4 4m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <p class="upload-title">Drop your MT700 file here, or tap to browse</p>
+      <p class="upload-sub">Accepts PDF or plain-text MT700 exports.</p>
+      <div class="accepted-types">
+        <span class="type-chip">PDF</span>
+        <span class="type-chip">TXT</span>
+      </div>
+    </label>
+    <div id="processingZone" class="processing-zone hidden" style="margin-top:16px;">
+      <div class="spinner"></div>
+      <p class="processing-title">Reading your PDF…</p>
+    </div>
+    <div style="text-align:center;">
+      <button class="upload-sample-btn" id="loadSampleBtn">Try with a sample MT700 instead</button>
+    </div>
+  </div>
+
+  <div id="app" class="hidden"></div>
+</div>
+
+<script>
+// ============================================================
+// MT700 PARSER ENGINE (Phase 1 — embedded inline, single-file)
+// ============================================================
+const FIELD_DEFS = {
+  "27":  { name: "Sequence of Total",              tier: 0, multiline: false },
+  "40A": { name: "Form of Documentary Credit",      tier: 0, multiline: false },
+  "20":  { name: "Documentary Credit Number",       tier: 0, multiline: false },
+  "31C": { name: "Date of Issue",                   tier: 1, multiline: false },
+  "40E": { name: "Applicable Rules",                tier: 0, multiline: false },
+  "31D": { name: "Date and Place of Expiry",        tier: 1, multiline: false },
+  "50":  { name: "Applicant",                       tier: 2, multiline: true  },
+  "59":  { name: "Beneficiary",                     tier: 2, multiline: true  },
+  "32B": { name: "Currency Code, Amount",           tier: 1, multiline: false },
+  "39A": { name: "Percentage Credit Amount Tolerance", tier: 1, multiline: false },
+  "39B": { name: "Maximum Credit Amount",           tier: 1, multiline: false },
+  "39C": { name: "Additional Amounts Covered",      tier: 0, multiline: true  },
+  "41A": { name: "Available With... By...",         tier: 0, multiline: true  },
+  "41D": { name: "Available With... By... (name/addr)", tier: 0, multiline: true },
+  "42C": { name: "Drafts at...",                    tier: 0, multiline: true  },
+  "42A": { name: "Drawee",                          tier: 0, multiline: false },
+  "42M": { name: "Mixed Payment Details",           tier: 0, multiline: true  },
+  "42P": { name: "Deferred Payment Details",        tier: 0, multiline: true  },
+  "43P": { name: "Partial Shipments",                tier: 1, multiline: false },
+  "43T": { name: "Transshipment",                    tier: 1, multiline: false },
+  "44A": { name: "Place of Taking in Charge / Dispatch / Receipt", tier: 2, multiline: false },
+  "44E": { name: "Port of Loading / Airport of Departure", tier: 2, multiline: false },
+  "44F": { name: "Port of Discharge / Airport of Destination", tier: 2, multiline: false },
+  "44B": { name: "Place of Final Destination",       tier: 2, multiline: false },
+  "44C": { name: "Latest Date of Shipment",           tier: 1, multiline: false },
+  "44D": { name: "Shipment Period",                   tier: 1, multiline: true  },
+  "45A": { name: "Description of Goods and/or Services", tier: 2, multiline: true },
+  "46A": { name: "Documents Required",                tier: 99, multiline: true },
+  "47A": { name: "Additional Conditions",             tier: 99, multiline: true },
+  "71B": { name: "Charges",                            tier: 0, multiline: true  },
+  "48":  { name: "Period for Presentation",             tier: 1, multiline: false },
+  "49":  { name: "Confirmation Instructions",           tier: 0, multiline: false },
+  "78":  { name: "Instructions to Paying/Accepting/Negotiating Bank", tier: 0, multiline: true },
+  "57A": { name: "Advise Through Bank",                 tier: 0, multiline: true  },
+  "57D": { name: "Advise Through Bank",                 tier: 0, multiline: true  },
+  "53A": { name: "Reimbursing Bank",                    tier: 0, multiline: true  },
+  "51A": { name: "Applicant Bank",                      tier: 0, multiline: true  },
+  "72":  { name: "Sender to Receiver Information",      tier: 0, multiline: true  },
+};
+
+// Some banks label fields with wording that differs from the formal SWIFT
+// field name above — most often a shortened operational phrase (e.g. "ON
+// BOARD/DISP/TAKING CHARGE" for 44A) or a spelling variant (TRANSHIPMENT vs
+// TRANSSHIPMENT). These synonyms are only used to help the plain-text (no
+// colon-tag) extraction strategy recognise a field boundary — the canonical
+// `name` above is still what's shown to the user everywhere else.
+const FIELD_LABEL_SYNONYMS = {
+  "43T": ["TRANSHIPMENT"],
+  "44A": ["ON BOARD DISP TAKING CHARGE", "TAKING CHARGE"],
+  "44B": ["FOR TRANSPORTATION TO"],
+  "41A": ["AVAILABLE WITH BY ANY BANK", "AVAILABLE WITH BY"],
+  "41D": ["AVAILABLE WITH BY NAME ADDR"],
+};
+
+function normalizeRaw(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  return raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function extractFieldChunks(text) {
+  const chunks = [];
+  const braceStyle = /\{([0-9]{1,2}[A-Z]?):([\s\S]*?)\}(?=\s*\{|\s*$)/g;
+  let match;
+  let foundBraceStyle = false;
+  while ((match = braceStyle.exec(text)) !== null) {
+    foundBraceStyle = true;
+    chunks.push({ tag: match[1], content: match[2].trim() });
+  }
+  if (foundBraceStyle) return chunks;
+
+  const lines = text.split("\n");
+  let currentTag = null;
+  let currentContent = [];
+  const tagLineRe = /^:([0-9]{1,2}[A-Z]?):(.*)$/;
+
+  for (const line of lines) {
+    const m = line.match(tagLineRe);
+    if (m) {
+      if (currentTag) chunks.push({ tag: currentTag, content: currentContent.join("\n").trim() });
+      currentTag = m[1];
+      currentContent = [m[2]];
+    } else if (currentTag) {
+      currentContent.push(line);
+    }
+  }
+  if (currentTag) chunks.push({ tag: currentTag, content: currentContent.join("\n").trim() });
+  if (chunks.length > 0) return chunks;
+
+  const tagAnywhereRe = /:([0-9]{1,2}[A-Z]?):/;
+  let cTag = null;
+  let cContent = [];
+  for (const line of lines) {
+    const m = line.match(tagAnywhereRe);
+    if (m && FIELD_DEFS[m[1]]) {
+      if (cTag) chunks.push({ tag: cTag, content: cContent.join("\n").trim() });
+      cTag = m[1];
+      const afterTag = line.slice(m.index + m[0].length);
+      cContent = [afterTag];
+    } else if (cTag) {
+      cContent.push(line);
+    }
+  }
+  if (cTag) chunks.push({ tag: cTag, content: cContent.join("\n").trim() });
+  if (chunks.length > 0) {
+    for (const chunk of chunks) {
+      const def = FIELD_DEFS[chunk.tag];
+      if (!def) continue;
+      const contentLines = chunk.content.split("\n");
+      if (contentLines.length < 2) continue;
+      const lastLine = contentLines[contentLines.length - 1].trim();
+      const labelWords = def.name.toUpperCase().replace(/[^A-Z\s]/g, "").split(/\s+/).filter(Boolean);
+      const lastLineWords = lastLine.toUpperCase().replace(/[^A-Z\s]/g, "").split(/\s+/).filter(Boolean);
+      const isShort = lastLineWords.length > 0 && lastLineWords.length <= 5;
+      const allWordsInLabel = lastLineWords.every((w) => labelWords.includes(w));
+      const hasContentBefore = contentLines.slice(0, -1).some((l) => l.trim().length > 0);
+      if (isShort && allWordsInLabel && hasContentBefore) {
+        chunk.content = contentLines.slice(0, -1).join("\n").trim();
+      }
+    }
+    return chunks;
+  }
+
+  // Fourth style: plain-text / PDF-extracted exports that drop the colon
+  // wrapper entirely, e.g. "40A. FORM OF DOCUMENTARY CREDIT: IRREVOCABLE" or
+  // "20 DOCUMENTARY CREDIT NUMBER: XXXXX". The tag sits alone at line start
+  // (optionally followed by a period), then the field's own plain-English
+  // label, then a colon, then the value. We require the label words to
+  // actually match FIELD_DEFS for that tag before accepting it — this stops
+  // numbered document lists (e.g. "1. SIGNED COMMERCIAL INVOICE...") inside
+  // 46A/47A from being misread as field tags.
+  const plainTagRe = /^([0-9]{1,2}[A-Z]?)\.?\s+([A-Z][^:]*?)(?::\s?(.*)|)$/;
+  let pTag = null;
+  let pContent = [];
+  for (const line of lines) {
+    const m = line.match(plainTagRe);
+    let matched = false;
+    if (m && FIELD_DEFS[m[1]]) {
+      const def = FIELD_DEFS[m[1]];
+      const candidateLabels = [def.name, ...(FIELD_LABEL_SYNONYMS[m[1]] || [])];
+      const lineLabelWords = m[2].toUpperCase().replace(/[^A-Z\s]/g, "").split(/\s+/).filter(Boolean);
+      const overlap = Math.max(...candidateLabels.map((label) => {
+        const labelWords = label.toUpperCase().replace(/[^A-Z\s]/g, "").split(/\s+/).filter(Boolean);
+        return lineLabelWords.filter((w) => labelWords.includes(w)).length;
+      }));
+      // Require meaningful overlap with the known field name (or a known
+      // synonym), not just a lucky tag-number match, since bare "20 " or
+      // "48 " could otherwise collide with narrative text.
+      if (overlap >= 1 && overlap >= Math.min(2, lineLabelWords.length)) {
+        matched = true;
+        if (pTag) chunks.push({ tag: pTag, content: pContent.join("\n").trim() });
+        pTag = m[1];
+        pContent = [m[3]];
+      }
+    }
+    if (!matched) {
+      if (pTag) pContent.push(line);
+    }
+  }
+  if (pTag) chunks.push({ tag: pTag, content: pContent.join("\n").trim() });
+  if (chunks.length > 0) return chunks;
+
+  for (const chunk of chunks) {
+    const def = FIELD_DEFS[chunk.tag];
+    if (!def) continue;
+    const contentLines = chunk.content.split("\n");
+    if (contentLines.length < 2) continue;
+    const lastLine = contentLines[contentLines.length - 1].trim();
+    const labelWords = def.name.toUpperCase().replace(/[^A-Z\s]/g, "").split(/\s+/).filter(Boolean);
+    const lastLineWords = lastLine.toUpperCase().replace(/[^A-Z\s]/g, "").split(/\s+/).filter(Boolean);
+    const isShort = lastLineWords.length > 0 && lastLineWords.length <= 5;
+    const allWordsInLabel = lastLineWords.every((w) => labelWords.includes(w));
+    const hasContentBefore = contentLines.slice(0, -1).some((l) => l.trim().length > 0);
+    if (isShort && allWordsInLabel && hasContentBefore) {
+      chunk.content = contentLines.slice(0, -1).join("\n").trim();
+    }
+  }
+  return chunks;
+}
+
+function detectContinuation(fields) {
+  const flags = [];
+  const seq = fields["27"];
+  if (seq && seq.content) {
+    const m = seq.content.match(/(\d+)\s*\/\s*(\d+)/);
+    if (m && m[1] !== m[2]) {
+      flags.push({ field: "27", reason: `Sequence of Total shows ${m[1]}/${m[2]}, so this is part ${m[1]} of ${m[2]}. You may need the MT701 too, for the full 46A and 47A text.` });
+    }
+  }
+  for (const tag of ["46A", "47A"]) {
+    const f = fields[tag];
+    if (f && f.content) {
+      const trimmed = f.content.trim();
+      const looksLikelyTruncated = trimmed.length > 1900 && !/[.:)\]]\s*$/.test(trimmed);
+      if (looksLikelyTruncated) {
+        flags.push({ field: tag, reason: `Field ${tag} is long and doesn't end in a full sentence, so it may continue in an MT701 — check for a follow-on message.` });
+      }
+    }
+  }
+  return flags;
+}
+
+function splitDateAndPlace(content) {
+  if (!content) return { date: null, place: null };
+  const m = content.match(/^(\d{6})(.*)$/s);
+  if (!m) return { date: null, place: content.trim() };
+  return { date: m[1], place: m[2].trim() };
+}
+
+function parseMT700(rawInput) {
+  const text = normalizeRaw(rawInput);
+  if (!text || !text.trim()) {
+    return { ok: false, error: "No content found. The file may be empty, a scanned image, or an unsupported format.", fields: {}, unknownFields: [], continuationFlags: [], raw: rawInput || "" };
+  }
+  const chunks = extractFieldChunks(text);
+  if (chunks.length === 0) {
+    return { ok: false, error: "We couldn't find MT700 field tags (like :20: or {20:...}) in this file. Check that this is an MT700 export, not a scanned image or a typed summary.", fields: {}, unknownFields: [], continuationFlags: [], raw: text };
+  }
+  const fields = {};
+  const unknownFields = [];
+  for (const { tag, content } of chunks) {
+    const def = FIELD_DEFS[tag];
+    if (!def) { unknownFields.push({ tag, content }); continue; }
+    if (fields[tag]) { fields[tag]._duplicate = true; continue; }
+    fields[tag] = { name: def.name, tier: def.tier, multiline: def.multiline, content };
+    if (tag === "31D") {
+      const { date, place } = splitDateAndPlace(content);
+      fields[tag].expiryDate = date;
+      fields[tag].expiryPlace = place;
+    }
+  }
+  const continuationFlags = detectContinuation(fields);
+  const missingCore = [];
+  if (!fields["20"]) missingCore.push("Documentary Credit Number (field 20)");
+  if (!fields["32B"]) missingCore.push("Currency Code and Amount (field 32B)");
+  return {
+    ok: true,
+    warning: missingCore.length ? `A valid MT700 should have these fields: ${missingCore.join(", ")}. This file doesn't have them, so check that it's a full MT700 export.` : null,
+    fields, unknownFields, continuationFlags, raw: text,
+  };
+}
+
+function summarize(parsed) {
+  if (!parsed.ok) return null;
+  const f = parsed.fields;
+  const get = (tag) => (f[tag] ? f[tag].content : null);
+  return {
+    lcNumber: get("20"), formOfCredit: get("40A"), dateOfIssue: get("31C"),
+    expiry: get("31D"),
+    expiryDate: f["31D"] ? f["31D"].expiryDate : null,
+    expiryPlace: f["31D"] ? f["31D"].expiryPlace : null,
+    applicant: get("50"), beneficiary: get("59"), amount: get("32B"),
+    tolerance: get("39A") || get("39B"),
+    portOfLoading: get("44E") || get("44A"),
+    portOfDischarge: get("44F") || get("44B"),
+    latestShipmentDate: get("44C"),
+    partialShipments: get("43P"), transshipment: get("43T"),
+    goodsDescription: get("45A"), presentationPeriod: get("48"),
+    documentsRequiredRaw: get("46A"), additionalConditionsRaw: get("47A"),
+  };
+}
+
+// ============================================================
+// PHASE 2: SUMMARY VIEW RENDERING
+// ============================================================
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function fmtDate(yymmdd) {
+  if (!yymmdd) return null;
+  if (!/^\d{6}$/.test(yymmdd)) return yymmdd; // not standard YYMMDD — show raw rather than blank
+  const yy = yymmdd.slice(0,2), mm = yymmdd.slice(2,4), dd = yymmdd.slice(4,6);
+  const year = (parseInt(yy,10) < 50 ? "20" : "19") + yy;
+  const months = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const mi = parseInt(mm,10);
+  if (mi < 1 || mi > 12) return yymmdd;
+  return `${dd} ${months[mi]} ${year}`;
+}
+
+function fmtAmount(raw) {
+  if (!raw) return null;
+  // SWIFT amount format: CCY then amount with comma as decimal separator, e.g. USD125000,00
+  const m = raw.match(/^([A-Z]{3})([\d,]+)$/);
+  if (!m) return raw;
+  const ccy = m[1];
+  const numPart = m[2].replace(",", ".");
+  const num = parseFloat(numPart);
+  if (isNaN(num)) return raw;
+  const formatted = num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${ccy} ${formatted}`;
+}
+
+function fieldCell(label, value, opts) {
+  opts = opts || {};
+  const cls = opts.full ? "field-cell full" : "field-cell";
+  const valCls = "f-value" + (opts.mono ? " mono" : "") + (!value ? " empty" : "");
+  const display = value ? esc(value) : "Not specified in this LC";
+  return `<div class="${cls}"><p class="f-label">${esc(label)}</p><p class="${valCls}">${display}</p></div>`;
+}
+
+function render(parsed) {
+  const appEl = document.getElementById("app");
+  const uploadEl = document.getElementById("uploadScreen");
+
+  if (!parsed.ok) {
+    uploadEl.classList.remove("hidden");
+    appEl.classList.add("hidden");
+    appEl.innerHTML = "";
+    uploadEl.querySelectorAll(".banner.error").forEach((el) => el.remove());
+    const banner = document.createElement("div");
+    banner.className = "banner error";
+    banner.innerHTML = `<svg class="banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><strong>We couldn't read this file</strong>${esc(parsed.error)}</div>`;
+    uploadEl.prepend(banner);
+    return;
+  }
+
+  uploadEl.classList.add("hidden");
+  appEl.classList.remove("hidden");
+
+  const s = summarize(parsed);
+  let html = "";
+
+  if (parsed.warning) {
+    html += `<div class="banner error"><svg class="banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><strong>Heads up</strong>${esc(parsed.warning)}</div></div>`;
+  }
+
+  if (parsed.continuationFlags && parsed.continuationFlags.length) {
+    for (const flag of parsed.continuationFlags) {
+      html += `<div class="banner notice"><svg class="banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg><div><strong>Possible continuation message (MT701)</strong>${esc(flag.reason)}</div></div>`;
+    }
+  }
+
+  if (parsed.unknownFields && parsed.unknownFields.length) {
+    html += `<div class="banner notice"><svg class="banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><strong>${parsed.unknownFields.length} field(s) we didn't recognize</strong>Fields ${esc(parsed.unknownFields.map(u=>u.tag).join(", "))} aren't on our list, so we kept them but didn't show them here. Check the raw file if they matter.</div></div>`;
+  }
+
+  // Hero
+  html += `<div class="doc-hero">
+    <p class="lc-label">Documentary Credit Number</p>
+    <p class="lc-number">${s.lcNumber ? esc(s.lcNumber) : "Not found"}</p>
+    <div class="amount-row">
+      <span class="amount">${s.amount ? esc(fmtAmount(s.amount)) : "Amount not found"}</span>
+      ${s.formOfCredit ? `<span class="form-tag">${esc(s.formOfCredit)}</span>` : ""}
+    </div>
+  </div>`;
+
+  // Stamp card — key facts
+  html += `<div class="stamp-card"><div class="field-grid">`;
+  html += fieldCell("Date of Issue", fmtDate(s.dateOfIssue));
+  html += fieldCell("Expiry Date", s.expiryDate ? fmtDate(s.expiryDate) : (s.expiry ? s.expiry : null));
+  html += fieldCell("Place of Expiry", s.expiryDate ? s.expiryPlace : null);
+  html += fieldCell("Latest Shipment Date", fmtDate(s.latestShipmentDate));
+  html += fieldCell("Applicant", s.applicant, { full: true, mono: true });
+  html += fieldCell("Beneficiary", s.beneficiary, { full: true, mono: true });
+
+  const routeValue = (s.portOfLoading || s.portOfDischarge)
+    ? `<div class="route-line"><span class="port">${s.portOfLoading ? esc(s.portOfLoading) : "?"}</span><span class="route-arrow">&#8594;</span><span class="port">${s.portOfDischarge ? esc(s.portOfDischarge) : "?"}</span></div>`
+    : null;
+  html += `<div class="field-cell full"><p class="f-label">Shipment Route</p>${routeValue ? `<div class="f-value">${routeValue}</div>` : `<p class="f-value empty">Not specified in this LC</p>`}</div>`;
+
+  html += fieldCell("Partial Shipments", s.partialShipments);
+  html += fieldCell("Transshipment", s.transshipment);
+  html += `</div></div>`;
+
+  // Detail toggle
+  html += `<button class="detail-toggle" id="detailToggle"><span>Show full LC details</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>`;
+  html += `<div class="detail-panel" id="detailPanel">`;
+  html += `<h3>Description of Goods and/or Services</h3><div class="detail-value">${s.goodsDescription ? esc(s.goodsDescription) : "Not specified"}</div>`;
+  html += `<h3>Tolerance</h3><div class="detail-value">${s.tolerance ? esc(s.tolerance) : "Not specified"}</div>`;
+  html += `<h3>Period for Presentation</h3><div class="detail-value">${s.presentationPeriod ? esc(s.presentationPeriod) + " days after shipment" : "Not specified — defaults to 21 days under UCP 600 Article 14(c) if silent"}</div>`;
+  html += `</div>`;
+
+  // 46A/47A raw disclosure
+  html += `<div class="disclosure-card">
+    <div class="d-header">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+      <p class="d-title">Bank-specified requirements — verify manually</p>
+    </div>
+    <p class="d-sub">These fields may list extra requirements the checklist below doesn't cover, so read them before you submit.</p>
+    <div class="disclosure-field">
+      <p class="df-label">Field 46A — Documents Required</p>
+      <div class="df-value">${s.documentsRequiredRaw ? esc(s.documentsRequiredRaw) : "Not present in this message"}</div>
+    </div>
+    <div class="disclosure-field">
+      <p class="df-label">Field 47A — Additional Conditions</p>
+      <div class="df-value">${s.additionalConditionsRaw ? esc(s.additionalConditionsRaw) : "Not present in this message"}</div>
+    </div>
+  </div>`;
+
+  html += `<div style="text-align:center;"><button class="reset-link" id="resetBtn">Upload a different LC</button></div>`;
+
+  html += `<p class="disclaimer-foot">This summary is for guidance only, not a substitute for review by your bank or a trade finance professional. Dates are read as written in the MT700 — we don't check them against LC rules.<br><br>This is an early version. A document checklist for your presentation is coming soon.</p>`;
+
+  appEl.innerHTML = html;
+
+  document.getElementById("detailToggle").addEventListener("click", function() {
+    this.classList.toggle("open");
+    document.getElementById("detailPanel").classList.toggle("open");
+    this.querySelector("span").textContent = this.classList.contains("open") ? "Hide full LC details" : "Show full LC details";
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", function() {
+    appEl.classList.add("hidden");
+    appEl.innerHTML = "";
+    uploadEl.classList.remove("hidden");
+    uploadEl.querySelectorAll(".banner").forEach(b => b.remove());
+    document.getElementById("fileInput").value = "";
+  });
+}
+
+// ============================================================
+// FILE HANDLING
+// ============================================================
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const processingZone = document.getElementById("processingZone");
+
+const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// Some browsers refuse to construct a Worker directly from a cross-origin
+// script URL (or silently fall back to PDF.js's slow/unreliable "fake
+// worker" path), which shows up as PDF parsing hanging or throwing for no
+// visible reason. The reliable fix is to fetch the worker script ourselves
+// and hand PDF.js a same-origin blob: URL instead, so the browser sees a
+// same-origin Worker regardless of where the script bytes actually came
+// from. We cache the resulting blob URL so we only do this once.
+let pdfjsWorkerBlobUrlPromise = null;
+function getPdfjsWorkerSrc() {
+  if (!pdfjsWorkerBlobUrlPromise) {
+    pdfjsWorkerBlobUrlPromise = fetch(PDFJS_WORKER_URL)
+      .then((res) => {
+        if (!res.ok) throw new Error("Worker script fetch failed: " + res.status);
+        return res.blob();
+      })
+      .then((blob) => URL.createObjectURL(blob))
+      .catch(() => PDFJS_WORKER_URL); // fall back to the direct URL if the fetch itself is blocked
+  }
+  return pdfjsWorkerBlobUrlPromise;
+}
+
+if (window.pdfjsLib) {
+  getPdfjsWorkerSrc().then((src) => { pdfjsLib.GlobalWorkerOptions.workerSrc = src; });
+}
+
+// PDF.js loads from a CDN via a blocking <script> tag in <head>, so in the
+// normal case it's ready before this code runs. But if the CDN request is
+// slow, blocked by a corporate proxy/extension, or briefly unavailable, the
+// library can still be mid-load (or genuinely failed) at this point. Rather
+// than permanently giving up the first time we check, we poll for a few
+// seconds before concluding it's actually unavailable.
+function waitForPdfJs(timeoutMs = 6000, intervalMs = 200) {
+  return new Promise((resolve) => {
+    if (window.pdfjsLib) {
+      getPdfjsWorkerSrc().then((src) => {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = src;
+        resolve(true);
+      });
+      return;
+    }
+    if (window.__pdfjsLoadFailed) {
+      resolve(false);
+      return;
+    }
+    const start = Date.now();
+    const timer = setInterval(() => {
+      if (window.pdfjsLib) {
+        clearInterval(timer);
+        getPdfjsWorkerSrc().then((src) => {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = src;
+          resolve(true);
+        });
+      } else if (window.__pdfjsLoadFailed || Date.now() - start > timeoutMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, intervalMs);
+  });
+}
+
+function showProcessing(show) {
+  processingZone.classList.toggle("hidden", !show);
+}
+
+function isPdf(file) {
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
+}
+
+async function extractPdfText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    // Group text items into lines using their vertical (y) position — PDF.js
+    // returns items with transform matrices; transform[5] is the y coordinate.
+    // Items on the same line share (approximately) the same y.
+    let lines = [];
+    let currentLine = [];
+    let lastY = null;
+    for (const item of content.items) {
+      const y = item.transform ? item.transform[5] : null;
+      if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) {
+        lines.push(currentLine.join(""));
+        currentLine = [];
+      }
+      currentLine.push(item.str);
+      lastY = y;
+    }
+    if (currentLine.length) lines.push(currentLine.join(""));
+    fullText += lines.join("\n") + "\n";
+  }
+  // Collapse runs of spaces (PDF.js glyph-spacing artifact) down to single
+  // spaces, without touching newlines which carry real field-boundary meaning.
+  fullText = fullText
+    .split("\n")
+    .map((line) => line.replace(/[ \t]{2,}/g, " ").trimEnd())
+    .join("\n");
+  return fullText;
+}
+
+async function handleFile(file) {
+  if (!file) return;
+
+  if (isPdf(file)) {
+    showProcessing(true);
+    const pdfjsReady = await waitForPdfJs();
+    if (!pdfjsReady) {
+      showProcessing(false);
+      render({ ok: false, error: "We couldn't load the PDF reader — this is usually a network or ad-blocker issue, not a problem with your file. Try refreshing the page, or save your LC as a .txt file and upload that instead." });
+      return;
+    }
+    try {
+      const text = await extractPdfText(file);
+      showProcessing(false);
+      if (!text || !text.trim() || text.trim().length < 20) {
+        render({ ok: false, error: "We couldn't find text in this PDF — it's likely a scanned image, not a digital PDF. Export a text version from your bank's portal, or upload a .txt file instead." });
+        return;
+      }
+      const parsed = parseMT700(text);
+      if (!parsed.ok) {
+        render({ ok: false, error: parsed.error + " Are you sure this is an LC? If it is, the format may be one we don't recognise yet." });
+        return;
+      }
+      render(parsed);
+    } catch (err) {
+      showProcessing(false);
+      console.error("PDF read error:", err);
+      render({ ok: false, error: "We couldn't read this PDF (" + (err && err.message ? err.message : "unknown error") + "). If this keeps happening, save your LC as a .txt file and upload that instead." });
+    }
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const parsed = parseMT700(e.target.result);
+    render(parsed);
+  };
+  reader.onerror = function() {
+    render({ ok: false, error: "We couldn't read this file. Try a different file, or check that it isn't corrupted." });
+  };
+  reader.readAsText(file);
+}
+
+fileInput.addEventListener("change", function(e) {
+  handleFile(e.target.files[0]);
+});
+
+dropZone.addEventListener("dragover", function(e) {
+  e.preventDefault();
+  dropZone.classList.add("dragover");
+});
+dropZone.addEventListener("dragleave", function() {
+  dropZone.classList.remove("dragover");
+});
+dropZone.addEventListener("drop", function(e) {
+  e.preventDefault();
+  dropZone.classList.remove("dragover");
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+
+// Sample LC (constructed from public SWIFT field specs, not real transaction data)
+const SAMPLE_MT700 = `{27:1/1}
+{40A:IRREVOCABLE}
+{20:LC0012345678}
+{31C:260115}
+{40E:UCP LATEST VERSION}
+{31D:260715NHAVA SHEVA}
+{50:GLOBAL IMPORTS PVT LTD
+PLOT 45 MIDC INDUSTRIAL AREA
+PUNE 411019 INDIA}
+{59:SAKURA TRADING CO LTD
+2-1 MARUNOUCHI CHIYODA-KU
+TOKYO 100-0005 JAPAN}
+{32B:USD125000,00}
+{39A:05/05}
+{43P:PARTIAL SHIPMENTS NOT ALLOWED}
+{43T:TRANSSHIPMENT NOT ALLOWED}
+{44E:YOKOHAMA PORT JAPAN}
+{44F:NHAVA SHEVA PORT INDIA}
+{44C:260630}
+{45A:5000 METRIC TONS OF ELECTRONIC COMPONENTS GRADE A
+AS PER PROFORMA INVOICE NO PI-2026-441 DATED 260110
+CIF NHAVA SHEVA INCOTERMS 2020}
+{46A:1. SIGNED COMMERCIAL INVOICE IN TRIPLICATE
+2. FULL SET CLEAN ON BOARD BILL OF LADING MADE OUT TO ORDER
+OF ISSUING BANK MARKED FREIGHT PREPAID NOTIFY APPLICANT
+3. PACKING LIST IN DUPLICATE
+4. CERTIFICATE OF ORIGIN ISSUED BY CHAMBER OF COMMERCE
+5. INSURANCE POLICY OR CERTIFICATE COVERING 110 PCT
+OF INVOICE VALUE INSTITUTE CARGO CLAUSES A}
+{47A:1. ALL DOCUMENTS MUST BE IN ENGLISH
+2. THIRD PARTY DOCUMENTS ACCEPTABLE EXCEPT DRAFT AND INVOICE
+3. SHORT FORM BILL OF LADING NOT ACCEPTABLE
+4. DOCUMENTS MUST BE PRESENTED WITHIN 21 DAYS AFTER
+SHIPMENT DATE BUT WITHIN VALIDITY OF CREDIT}
+{48:21}
+{49:WITHOUT}`;
+
+document.getElementById("loadSampleBtn").addEventListener("click", function() {
+  const parsed = parseMT700(SAMPLE_MT700);
+  render(parsed);
+});
+</script>
+</body>
+</html>
