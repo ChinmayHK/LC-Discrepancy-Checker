@@ -363,6 +363,42 @@
   }
 
   .hidden { display: none; }
+
+  /* ---- Presentation checklist ---- */
+  .cl-card { border: 1px solid var(--rule); border-radius: 10px; background: var(--white); margin: 20px 0; overflow: hidden; }
+  .cl-head { padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+  .cl-title { margin: 0 0 2px; font-size: 15px; font-weight: 700; }
+  .cl-sub { margin: 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.45; }
+  .cl-summary { padding: 9px 16px; background: var(--paper); border-bottom: 1px solid var(--rule); font-size: 12.5px; color: var(--ink-soft); }
+  .cl-summary strong { color: var(--ink); }
+  .cl-summary .cl-bad { color: var(--warn); font-weight: 700; }
+  .cl-doc { border-bottom: 1px solid var(--rule); }
+  .cl-doc:last-child { border-bottom: none; }
+  .cl-doc-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; user-select: none; background: none; border: 0; width: 100%; text-align: left; font: inherit; color: inherit; }
+  .cl-chev { flex: 0 0 auto; width: 14px; color: var(--ink-soft); font-size: 10px; transition: transform .15s ease; }
+  .cl-doc.open .cl-chev { transform: rotate(90deg); }
+  .cl-doc-name { flex: 1; font-weight: 600; font-size: 13.5px; }
+  .cl-chip { flex: 0 0 auto; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 2px 7px; border-radius: 3px; background: var(--rule); color: var(--ink-soft); }
+  .cl-chip.ok { background: var(--accent-soft); color: var(--accent); }
+  .cl-chip.bad { background: var(--warn-soft); color: var(--warn); }
+  .cl-body { display: none; border-top: 1px solid var(--rule); }
+  .cl-doc.open .cl-body { display: block; }
+  .cl-gate { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; background: var(--paper); }
+  .cl-gate p { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+  .cl-btns { display: flex; gap: 6px; }
+  .cl-btn { padding: 6px 14px; border-radius: 4px; border: 1px solid var(--rule); background: var(--white); font: inherit; font-size: 12.5px; font-weight: 500; color: var(--ink); cursor: pointer; }
+  .cl-btn.yes.sel { background: var(--accent); border-color: var(--accent); color: var(--white); }
+  .cl-btn.no.sel { background: var(--warn); border-color: var(--warn); color: var(--white); }
+  .cl-asks { padding: 12px 16px 14px; }
+  .cl-asks-label { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+  .cl-ask { margin: 0 0 8px; padding: 8px 10px; background: var(--paper); border-radius: 6px; font-size: 12.5px; line-height: 1.5; }
+  .cl-ask:last-child { margin-bottom: 0; }
+  .cl-ref { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; border: 1px solid var(--rule); background: var(--white); padding: 0 4px; border-radius: 3px; }
+  .cl-missing { margin: 12px 16px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5; color: var(--warn); background: var(--warn-soft); border: 1px solid #E8C4BB; border-radius: 6px; }
+  .cl-hint { padding: 12px 16px; font-size: 12.5px; color: var(--ink-soft); }
+  .cl-other { padding: 12px 16px; background: var(--paper); border-top: 1px solid var(--rule); font-size: 12.5px; line-height: 1.5; }
+  .cl-other p { margin: 0 0 6px; }
+  .cl-other ul { margin: 0; padding-left: 18px; }
 </style>
 </head>
 <body>
@@ -396,6 +432,7 @@
   <div id="app" class="hidden"></div>
 </div>
 
+<script src="checklist-engine.js"></script>
 <script>
 // ============================================================
 // MT700 PARSER ENGINE (Phase 1 — embedded inline, single-file)
@@ -704,6 +741,96 @@ function fieldCell(label, value, opts) {
   return `<div class="${cls}"><p class="f-label">${esc(label)}</p><p class="${valCls}">${display}</p></div>`;
 }
 
+// ---- Presentation checklist (uses checklist-engine.js) ----
+function buildChecklistHtml(rawDocs) {
+  if (typeof buildDocumentChecklist !== "function") return "";
+  if (!rawDocs || !rawDocs.trim()) {
+    return `<div class="cl-card"><div class="cl-head"><p class="cl-title">Presentation checklist</p><p class="cl-sub">Field 46A wasn't found in this message. It may be in the MT701 continuation, so read the LC for its document list.</p></div></div>`;
+  }
+  const result = buildDocumentChecklist(rawDocs);
+
+  // Group repeated mentions of the same document type into one section
+  const groups = [];
+  const byId = {};
+  for (const r of result.recognized) {
+    if (!byId[r.docTypeId]) {
+      byId[r.docTypeId] = { id: r.docTypeId, label: r.label, asks: [] };
+      groups.push(byId[r.docTypeId]);
+    }
+    if (!byId[r.docTypeId].asks.includes(r.sourceText)) byId[r.docTypeId].asks.push(r.sourceText);
+  }
+
+  let h = `<div class="cl-card" id="clCard">
+    <div class="cl-head"><p class="cl-title">Presentation checklist</p>
+    <p class="cl-sub">Built from field 46A of this LC. Open each document and confirm whether you're including it.</p></div>
+    <div class="cl-summary" id="clSummary"></div>`;
+
+  for (const g of groups) {
+    h += `<div class="cl-doc" data-doc="${esc(g.id)}">
+      <button class="cl-doc-head" type="button"><span class="cl-chev">&#9654;</span><span class="cl-doc-name">${esc(g.label)}</span><span class="cl-chip" data-role="chip">Unanswered</span></button>
+      <div class="cl-body">
+        <div class="cl-gate"><p>Included in this presentation?</p>
+          <div class="cl-btns"><button type="button" class="cl-btn yes" data-ans="yes">Yes</button><button type="button" class="cl-btn no" data-ans="no">No</button></div></div>
+        <div data-role="result"></div>
+      </div></div>`;
+  }
+
+  if (result.unrecognized.length) {
+    h += `<div class="cl-other"><p><strong>Other requirements — check manually.</strong> We couldn't match these to a document type.</p><ul>`;
+    for (const u of result.unrecognized) h += `<li>${esc(u.sourceText)}</li>`;
+    h += `</ul></div>`;
+  }
+  h += `</div>`;
+
+  window.__clGroups = groups;
+  return h;
+}
+
+function initChecklist(rootEl) {
+  const groups = window.__clGroups || [];
+  const card = rootEl.querySelector("#clCard");
+  if (!card) return;
+  const state = {};
+
+  function refresh() {
+    let yes = 0, no = 0;
+    groups.forEach(g => { if (state[g.id] === "yes") yes++; else if (state[g.id] === "no") no++; });
+    const open = groups.length - yes - no;
+    card.querySelector("#clSummary").innerHTML =
+      `<strong>${groups.length}</strong> required &middot; <strong>${yes}</strong> included &middot; ` +
+      (no ? `<span class="cl-bad">${no} missing</span>` : `<strong>0</strong> missing`) +
+      ` &middot; <strong>${open}</strong> unanswered`;
+  }
+
+  card.querySelectorAll(".cl-doc").forEach(docEl => {
+    const g = groups.find(x => x.id === docEl.dataset.doc);
+    const chip = docEl.querySelector('[data-role="chip"]');
+    const out = docEl.querySelector('[data-role="result"]');
+    out.innerHTML = `<div class="cl-hint">Answer above to see what the LC asks for.</div>`;
+
+    docEl.querySelector(".cl-doc-head").addEventListener("click", () => docEl.classList.toggle("open"));
+
+    docEl.querySelectorAll(".cl-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const ans = btn.dataset.ans;
+        state[g.id] = ans;
+        docEl.querySelectorAll(".cl-btn").forEach(b => b.classList.remove("sel"));
+        btn.classList.add("sel");
+        if (ans === "yes") {
+          chip.textContent = "Included"; chip.className = "cl-chip ok";
+          out.innerHTML = `<div class="cl-asks"><p class="cl-asks-label">What the LC asks for <span class="cl-ref">46A</span></p>` +
+            g.asks.map(a => `<p class="cl-ask">${esc(a)}</p>`).join("") + `</div>`;
+        } else {
+          chip.textContent = "Missing"; chip.className = "cl-chip bad";
+          out.innerHTML = `<div class="cl-missing">The LC requires this document in field <span class="cl-ref">46A</span>. Your presentation is incomplete without it.</div>`;
+        }
+        refresh();
+      });
+    });
+  });
+  refresh();
+}
+
 function render(parsed) {
   const appEl = document.getElementById("app");
   const uploadEl = document.getElementById("uploadScreen");
@@ -793,11 +920,14 @@ function render(parsed) {
     </div>
   </div>`;
 
+  html += buildChecklistHtml(s.documentsRequiredRaw);
+
   html += `<div style="text-align:center;"><button class="reset-link" id="resetBtn">Upload a different LC</button></div>`;
 
-  html += `<p class="disclaimer-foot">This summary is for guidance only, not a substitute for review by your bank or a trade finance professional. Dates are read as written in the MT700 — we don't check them against LC rules.<br><br>This is an early version. A document checklist for your presentation is coming soon.</p>`;
+  html += `<p class="disclaimer-foot">This summary is for guidance only, not a substitute for review by your bank or a trade finance professional. Dates are read as written in the MT700 — we don't check them against LC rules.<br><br>This is an early version. The checklist confirms which documents you're including. Checks against LC terms are still being built.</p>`;
 
   appEl.innerHTML = html;
+  initChecklist(appEl);
 
   document.getElementById("detailToggle").addEventListener("click", function() {
     this.classList.toggle("open");
