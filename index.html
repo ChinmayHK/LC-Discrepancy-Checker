@@ -399,6 +399,25 @@
   .cl-other { padding: 12px 16px; background: var(--paper); border-top: 1px solid var(--rule); font-size: 12.5px; line-height: 1.5; }
   .cl-other p { margin: 0 0 6px; }
   .cl-other ul { margin: 0; padding-left: 18px; }
+  .cl-chip.rv { background: #FBEFD5; color: #7A5410; }
+  .cl-inv { border-top: 1px solid var(--rule); }
+  .cl-file { display: block; text-align: center; padding: 10px; border-radius: 4px; border: 1px solid var(--rule); background: var(--white); font-size: 12.5px; font-weight: 500; color: var(--ink); cursor: pointer; }
+  .cl-file input { display: none; }
+  .cl-small { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-soft); }
+  .cl-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--rule); font-size: 12.5px; }
+  .cl-row .k { color: var(--ink-soft); }
+  .cl-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+  .cl-replace { color: var(--ink-soft); text-decoration: underline; cursor: pointer; font-size: 12.5px; }
+  .cl-replace input { display: none; }
+  .cl-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 10px; }
+  .cl-pair > div { background: var(--paper); border-radius: 6px; padding: 8px 10px; }
+  .cl-pair > div.bad { background: var(--warn-soft); color: var(--warn); }
+  .cl-pair p { margin: 0; font-size: 11px; color: inherit; }
+  .cl-pair .cl-mono { margin-top: 2px; font-size: 11.5px; }
+  .cl-note { margin: 0; padding: 10px 12px; border-radius: 6px; font-size: 12.5px; line-height: 1.5; }
+  .cl-note.bad { background: var(--warn-soft); color: var(--warn); border: 1px solid #E8C4BB; }
+  .cl-note.rv { background: #FBEFD5; color: #7A5410; border: 1px solid #EBD39A; }
+  .cl-pad { padding: 12px 16px; }
 </style>
 </head>
 <body>
@@ -433,6 +452,7 @@
 </div>
 
 <script src="checklist-engine.js"></script>
+<script src="invoice-check.js"></script>
 <script>
 // ============================================================
 // MT700 PARSER ENGINE (Phase 1 — embedded inline, single-file)
@@ -786,6 +806,93 @@ function buildChecklistHtml(rawDocs) {
   return h;
 }
 
+// ---- Invoice upload and amount check (uses invoice-check.js) ----
+const invState = { busy: false, error: null, result: null, fileName: null };
+
+function fmtFound(e) {
+  const n = e.amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (e.currency || e.symbol || "") + (e.currency ? " " : "") + n;
+}
+function fmtLc(lc) {
+  return lc.currency + " " + lc.amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function invoiceStatus() {
+  const r = invState.result;
+  if (!r) return null;
+  if (r.amountMatch === "match") return { label: "Clear", cls: "cl-chip ok" };
+  if (r.amountMatch === "mismatch") return { label: "Flagged", cls: "cl-chip bad" };
+  return { label: "Review", cls: "cl-chip rv" };
+}
+
+function invoiceBodyHtml() {
+  const pick = (label) => `<label class="cl-file">${label}<input type="file" accept=".pdf,application/pdf" data-role="invfile"></label>`;
+  if (invState.busy) return `<div class="cl-pad">Reading your invoice…</div>`;
+  if (invState.error) return `<div class="cl-pad"><p class="cl-note rv">${esc(invState.error)}</p><div style="margin-top:10px">${pick("Try another file")}</div></div>`;
+  const r = invState.result;
+  if (!r) {
+    return `<div class="cl-pad"><p style="margin:0 0 10px;font-size:12.5px">Upload the invoice PDF and we'll check its amount against the LC.</p>${pick("Choose invoice PDF")}<p class="cl-small">Your file stays on your device.</p></div>`;
+  }
+  let h = "";
+  const m = r.amountMatch;
+  if (m === "match") {
+    h += `<div class="cl-row" style="border-top:0"><span>Amount matches the LC</span><span class="cl-mono">${esc(fmtLc(r.lcAmount))}</span></div>`;
+  } else if (m === "mismatch") {
+    const tol = window.__lcTolerance ? ` This LC's <span class="cl-ref">39A</span> reads ${esc(window.__lcTolerance)}.` : "";
+    const others = r.foundAmounts.slice(0, 5).map(fmtFound).map(esc).join(" · ");
+    h += `<div class="cl-pad"><div class="cl-pair"><div><p>LC amount <span class="cl-ref">32B</span></p><p class="cl-mono">${esc(fmtLc(r.lcAmount))}</p></div>` +
+      `<div class="bad"><p>Invoice says</p><p class="cl-mono">${esc(fmtFound(r.matchedEntry))}</p></div></div>` +
+      `<p class="cl-note bad">The amounts differ. A lower invoice can be fine if partial drawings are allowed. A higher one is a risk unless the tolerance in <span class="cl-ref">39A</span> covers it.${tol}</p></div>` +
+      `<div class="cl-row"><span class="k">All amounts found</span><span class="cl-mono">${others}</span></div>`;
+  } else if (m === "match_currency_unconfirmed") {
+    h += `<div class="cl-pad"><p class="cl-note rv">The amount matches, but we only found a ${esc(r.matchedEntry.symbol || "currency symbol")} sign, not a currency code. The LC is in ${esc(r.lcAmount.currency)}. Check the invoice currency by hand.</p></div>` +
+      `<div class="cl-row"><span class="k">Found on invoice</span><span class="cl-mono">${esc((r.matchedEntry.symbol || "") + r.matchedEntry.amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}</span></div>`;
+  } else if (m === "not_found") {
+    h += `<div class="cl-pad"><p class="cl-note rv">We couldn't find an amount in this PDF. It may be a scan. Check the amount by hand.</p></div>`;
+  } else {
+    h += `<div class="cl-pad"><p class="cl-note rv">Field <span class="cl-ref">32B</span> wasn't found in this LC, so we can't compare amounts. Check the amount by hand.</p></div>`;
+  }
+  h += `<div class="cl-row"><span class="k">Invoice date, as written</span><span class="cl-mono">${r.invoiceDate ? esc(r.invoiceDate) : "Not found"}</span></div>`;
+  h += `<div class="cl-row"><span class="k">${esc(invState.fileName || "")}</span><label class="cl-replace">Replace<input type="file" accept=".pdf,application/pdf" data-role="invfile"></label></div>`;
+  return h;
+}
+
+function mountInvoice(box, chip) {
+  function draw() {
+    box.innerHTML = invoiceBodyHtml();
+    const st = invoiceStatus();
+    if (st && !invState.busy) { chip.textContent = st.label; chip.className = st.cls; }
+    else { chip.textContent = "Included"; chip.className = "cl-chip ok"; }
+    const input = box.querySelector('[data-role="invfile"]');
+    if (input) input.addEventListener("change", onPick);
+  }
+  async function onPick(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    invState.error = null;
+    if (!isPdf(f)) {
+      invState.error = "This isn't a PDF. Upload the invoice as a PDF.";
+      draw();
+      return;
+    }
+    invState.busy = true;
+    draw();
+    try {
+      const ready = await waitForPdfJs();
+      if (!ready) throw new Error("the PDF reader didn't load");
+      const text = await extractPdfText(f);
+      invState.result = compareInvoiceToLc(text || "", window.__lcAmount);
+      invState.fileName = f.name;
+    } catch (err) {
+      console.error("Invoice read error:", err);
+      invState.error = "We couldn't read this PDF (" + (err && err.message ? err.message : "unknown error") + "). Try another file.";
+    }
+    invState.busy = false;
+    draw();
+  }
+  draw();
+}
+
 function initChecklist(rootEl) {
   const groups = window.__clGroups || [];
   const card = rootEl.querySelector("#clCard");
@@ -820,6 +927,12 @@ function initChecklist(rootEl) {
           chip.textContent = "Included"; chip.className = "cl-chip ok";
           out.innerHTML = `<div class="cl-asks"><p class="cl-asks-label">What the LC asks for <span class="cl-ref">46A</span></p>` +
             g.asks.map(a => `<p class="cl-ask">${esc(a)}</p>`).join("") + `</div>`;
+          if (g.id === "invoice") {
+            const box = document.createElement("div");
+            box.className = "cl-inv";
+            out.appendChild(box);
+            mountInvoice(box, chip);
+          }
         } else {
           chip.textContent = "Missing"; chip.className = "cl-chip bad";
           out.innerHTML = `<div class="cl-missing">The LC requires this document in field <span class="cl-ref">46A</span>. Your presentation is incomplete without it.</div>`;
@@ -920,11 +1033,14 @@ function render(parsed) {
     </div>
   </div>`;
 
+  invState.busy = false; invState.error = null; invState.result = null; invState.fileName = null;
+  window.__lcAmount = s.amount;
+  window.__lcTolerance = s.tolerance;
   html += buildChecklistHtml(s.documentsRequiredRaw);
 
   html += `<div style="text-align:center;"><button class="reset-link" id="resetBtn">Upload a different LC</button></div>`;
 
-  html += `<p class="disclaimer-foot">This summary is for guidance only, not a substitute for review by your bank or a trade finance professional. Dates are read as written in the MT700 — we don't check them against LC rules.<br><br>This is an early version. The checklist confirms which documents you're including. Checks against LC terms are still being built.</p>`;
+  html += `<p class="disclaimer-foot">This summary is for guidance only, not a substitute for review by your bank or a trade finance professional. Dates are read as written in the MT700 — we don't check them against LC rules.<br><br>This is an early version. The checklist confirms which documents you're including, and checks the invoice amount against the LC. Other checks are still being built.</p>`;
 
   appEl.innerHTML = html;
   initChecklist(appEl);
